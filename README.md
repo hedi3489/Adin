@@ -9,7 +9,7 @@ It also automatically refreshes prayer times at midnight.
 ### Software Requirements
 - mpg123 for audio playback
 
-# Usage
+## Usage
 1. Configure your city, country, and method in the script:
   params = {
       "city": "Montreal",
