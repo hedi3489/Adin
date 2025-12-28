@@ -1,10 +1,14 @@
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import schedule
 import time
 import subprocess
 import logging
 from lcd1602 import LCD1602
+import signal
+import sys
+
+toggle_state = True
 
 # Logging setup
 logging.basicConfig(
@@ -30,9 +34,7 @@ params = {
 }
 
 def fetch_prayer_times():
-    """Fetch new prayer times and reschedule Adhan jobs."""
     global prayers
-    # Clear old jobs first
     schedule.clear('prayers')
 
     try:
@@ -41,6 +43,7 @@ def fetch_prayer_times():
         data = response.json()
         timings = data["data"]["timings"]
         logging.info("Prayer times fetched successfully.")
+
     except Exception as e:
         logging.error(f"Error fetching prayer times: {e}")
         timings = {}
@@ -53,19 +56,36 @@ def fetch_prayer_times():
         "Isha": timings.get('Isha', '00:00')
     }
 
-    next_prayer = list(prayers.items())[0]
-    lcd.clear()
-    lcd.write(
-        "Next Prayer,",
-        f"{next_prayer[0]} at {next_prayer[1]}"
-    )
-
     for prayer, t in prayers.items():
         logging.info(f"Scheduled {prayer} at {t}")
         # lcd.write("Next prayer,", f"{prayer} as {t}")
         schedule.every().day.at(t).do(play_adhan).tag('prayers')
 
-# Function to play audio
+    return prayers
+
+def update_next_prayer_display(prayers):
+    global toggle_state
+    now = datetime.now().time()
+    current_time = datetime.now().strftime("%H:%M")
+    next_prayer = None
+
+    for prayer, t in prayers.items():
+        prayer_time = datetime.strptime(t, "%H:%M").time()
+        if prayer_time > now:
+            next_prayer = (prayer, t)
+            break
+    lcd.clear()
+    if toggle_state:
+        if next_prayer:
+            lcd.write("Next Prayer,",f"{next_prayer[0]} at {next_prayer[1]}")
+        else:
+            lcd.write("Fetching prayers", "in a bit...")
+    else:
+        lcd.write("Currently,", f"it's {current_time}")
+    
+    toggle_state = not toggle_state
+
+
 def play_adhan():
     now = datetime.now().strftime("%H:%M")
     logging.info(f"Playing Adhan at {now}")
@@ -74,17 +94,28 @@ def play_adhan():
     except Exception as e:
         logging.error(f"Error playing audio: {e}")
 
-# Initial fetch
-fetch_prayer_times()
+def schedule_refresh_time():
+    isha_time = datetime.strptime(prayers["Isha"], "%H:%M")
+    refresh_time_dt = isha_time + timedelta(minutes=3)
+    refresh_time = refresh_time_dt.strftime("%H:%M")
+    schedule.every().day.at(refresh_time).do(fetch_prayer_times).tag('refresh')
 
-# Schedule daily refresh at 00:05
-schedule.every().day.at("00:05").do(fetch_prayer_times).tag('refresh')
-
-# Keep running
-try:
-
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-except KeyboardInterrupt:
+def graceful_exit(signum, frame):
+    lcd.clear()
+    lcd.write("Adin...", "   Asleep...")
     lcd.cleanup()
+    sys.exit(0)
+
+prayers = {}
+fetch_prayer_times()
+time.sleep(5)
+schedule_refresh_time()
+schedule.every(5).seconds.do(update_next_prayer_display, prayers)
+
+# Catch Ctrl+C & termination signal
+signal.signal(signal.SIGINT, graceful_exit)
+signal.signal(signal.SIGTERM, graceful_exit)
+
+while True:
+    schedule.run_pending()
+    time.sleep(1)
