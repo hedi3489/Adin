@@ -8,7 +8,10 @@ from lcd1602 import LCD1602
 import signal
 import sys
 
+prayers = {}
+counter = 0
 toggle_state = True
+ORDER = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"]
 
 # Logging setup
 logging.basicConfig(
@@ -58,45 +61,44 @@ def fetch_prayer_times():
 
     for prayer, t in prayers.items():
         logging.info(f"Scheduled {prayer} at {t}")
-        # lcd.write("Next prayer,", f"{prayer} as {t}")
         schedule.every().day.at(t).do(play_adhan).tag('prayers')
+    schedule_refresh_time()
 
     return prayers
 
-def update_next_prayer_display(prayers):
-    global toggle_state
-    now = datetime.now().time()
-    current_time = datetime.now().strftime("%H:%M")
-    next_prayer = None
-
-    for prayer, t in prayers.items():
-        prayer_time = datetime.strptime(t, "%H:%M").time()
-        if prayer_time > now:
-            next_prayer = (prayer, t)
-            break
-    lcd.clear()
-    if toggle_state:
-        if next_prayer:
-            lcd.write("Next Prayer,",f"{next_prayer[0]} at {next_prayer[1]}")
-        else:
-            lcd.write("Fetching prayers", "in a bit...")
-    else:
-        lcd.write("Currently,", f"it's {current_time}")
-    
-    toggle_state = not toggle_state
-
-
 def play_adhan():
+    global counter
     now = datetime.now().strftime("%H:%M")
     logging.info(f"Playing Adhan at {now}")
     try:
         subprocess.Popen(["mpg123", "-o", "alsa", "/home/pi/Desktop/Adin/adhan.mp3"])
     except Exception as e:
         logging.error(f"Error playing audio: {e}")
+    counter += 1 
+
+def update_lcd():
+    global counter
+    global ORDER
+    now = datetime.now().strftime("%H:%M")
+    counter %= len(ORDER)
+    lcd.write("Time: " + now, f"{ORDER[counter]} {prayers[ORDER[counter]]}")
+
+def reconcile_counter():
+    global counter
+    global ORDER
+
+    counter = 0
+    now = datetime.now().time()
+    for name in ORDER:
+        prayer_time = datetime.strptime(prayers[name], "%H:%M").time()
+        if now > prayer_time:
+            counter += 1
+        else:
+            break
 
 def schedule_refresh_time():
     isha_time = datetime.strptime(prayers["Isha"], "%H:%M")
-    refresh_time_dt = isha_time + timedelta(minutes=3)
+    refresh_time_dt = isha_time + timedelta(minutes=5)
     refresh_time = refresh_time_dt.strftime("%H:%M")
     schedule.every().day.at(refresh_time).do(fetch_prayer_times).tag('refresh')
 
@@ -106,11 +108,11 @@ def graceful_exit(signum, frame):
     lcd.cleanup()
     sys.exit(0)
 
-prayers = {}
+
 fetch_prayer_times()
 time.sleep(5)
-schedule_refresh_time()
-schedule.every(5).seconds.do(update_next_prayer_display, prayers)
+reconcile_counter()
+update_lcd()
 
 # Catch Ctrl+C & termination signal
 signal.signal(signal.SIGINT, graceful_exit)
