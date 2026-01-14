@@ -22,6 +22,7 @@ logging.basicConfig(
 
 logging.info("===== Fetcher.py started =====")
 lcd = LCD1602()
+lcd.clear()
 lcd.write(
     "Adin Awake",
     "Fetching times"
@@ -81,7 +82,7 @@ def update_lcd():
     global ORDER
     now = datetime.now().strftime("%H:%M")
     counter %= len(ORDER)
-    lcd.write("Time: " + now, f"{ORDER[counter]} {prayers[ORDER[counter]]}")
+    lcd.write("Now: " + now, f"{ORDER[counter]} at {prayers[ORDER[counter]]}")
 
 def reconcile_counter():
     global counter
@@ -108,11 +109,10 @@ def graceful_exit(signum, frame):
     lcd.cleanup()
     sys.exit(0)
 
-
 fetch_prayer_times()
 time.sleep(5)
 reconcile_counter()
-update_lcd()
+schedule.every(5).seconds.do(update_lcd)
 
 # Catch Ctrl+C & termination signal
 signal.signal(signal.SIGINT, graceful_exit)
