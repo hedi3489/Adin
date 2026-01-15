@@ -1,5 +1,5 @@
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import schedule
 import time
 import subprocess
@@ -22,7 +22,13 @@ logging.basicConfig(
 
 logging.info("===== Fetcher.py started =====")
 lcd = LCD1602()
+
+# Ensure LCD clears
+time.sleep(0.5)
 lcd.clear()
+time.sleep(0.1)
+lcd.clear() 
+
 lcd.write(
     "Adin Awake",
     "Fetching times"
@@ -30,19 +36,35 @@ lcd.write(
 time.sleep(3)
 
 # API endpoint and parameters
-url = "https://api.aladhan.com/v1/timingsByCity"
+
+url = "https://api.aladhan.com/v1/timings/"
 params = {
-    "city": "Brossard",
-    "country": "Canada",
-    "method": 2
+    "latitude": "45.49829337659685",
+    "longitude": "-73.5006225145062"
 }
 
 def fetch_prayer_times():
     global prayers
     schedule.clear('prayers')
 
+    date_str = date.today().strftime("%d-%m-%Y")
+
+    if "Isha" in prayers:
+        isha = datetime.strptime(prayers["Isha"], "%H:%M").time()
+        if datetime.now().time() > isha:
+            date_str = (date.today() + timedelta(days=1)).strftime("%d-%m-%Y")
+
+    prayers = execute_fetch(url, date_str, params)
+
+    for prayer, t in prayers.items():
+        logging.info(f"Scheduled {prayer} at {t}")
+        schedule.every().day.at(t).do(play_adhan).tag('prayers')
+
+    schedule_refresh_time()
+
+def execute_fetch(url, date_str, params):
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url+date_str, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
         timings = data["data"]["timings"]
@@ -56,16 +78,11 @@ def fetch_prayer_times():
         "Fajr": timings.get('Fajr', '00:00'),
         "Dhuhr": timings.get('Dhuhr', '00:00'),
         "Asr": timings.get('Asr', '00:00'),
-        "Maghreb": timings.get('Maghrib', '00:00'),
+        "Maghrib": timings.get('Maghrib', '00:00'),
         "Isha": timings.get('Isha', '00:00')
     }
-
-    for prayer, t in prayers.items():
-        logging.info(f"Scheduled {prayer} at {t}")
-        schedule.every().day.at(t).do(play_adhan).tag('prayers')
-    schedule_refresh_time()
-
     return prayers
+
 
 def play_adhan():
     global counter
