@@ -10,6 +10,7 @@ import sys
 
 # Variables
 prayers = {}
+remaining_prayers = []
 counter = 0
 toggle_state = True
 lcd = LCD1602()
@@ -33,25 +34,16 @@ params = {
 
 
 # Logic functions
-def fetch_prayer_times():
+def initial_fetch():
+
     global prayers
     schedule.clear('prayers')
-    date_str = date.today().strftime("%d-%m-%Y")
 
-    if "Isha" in prayers:
-        isha = datetime.strptime(prayers["Isha"], "%H:%M").time()
-        if datetime.now().time() > isha:
-            date_str = (date.today() + timedelta(days=1)).strftime("%d-%m-%Y")
-
-    prayers = execute_fetch(url, date_str, params)
-
-    for prayer, t in prayers.items():
-        logging.info(f"Scheduled {prayer} at {t}")
-        schedule.every().day.at(t).do(play_adhan).tag('prayers')
-
-    schedule_refresh_time()
+    tdy_str = date.today().strftime("%d-%m-%Y")
+    execute_fetch(url, tdy_str, params)
 
 def execute_fetch(url, date_str, params):
+    global prayers
     try:
         response = requests.get(url+date_str, params=params, timeout=10)
         response.raise_for_status()
@@ -70,27 +62,39 @@ def execute_fetch(url, date_str, params):
         "Maghrib": timings.get('Maghrib', '00:00'),
         "Isha": timings.get('Isha', '00:00')
     }
-    return prayers
 
-def reconcile_counter():
-    global counter
-    global ORDER
-
-    counter = 0
+def get_remaining_prayers(prayers):
     now = datetime.now().time()
+    remaining = []
+
     for name in ORDER:
         prayer_time = datetime.strptime(prayers[name], "%H:%M").time()
-        if now > prayer_time:
-            counter += 1
-        else:
-            break
-    logging.info(f"Counter: {counter}")
+        if prayer_time > now:
+            remaining.append((name, prayers[name]))
 
-def schedule_refresh_time():
-    isha_time = datetime.strptime(prayers["Isha"], "%H:%M")
-    refresh_time_dt = isha_time + timedelta(minutes=5)
-    refresh_time = refresh_time_dt.strftime("%H:%M")
-    schedule.every().day.at(refresh_time).do(fetch_prayer_times).tag('refresh')
+    return remaining
+
+def schedule_play_adhan(remaining_prayers):
+    for prayer, t in remaining_prayers:
+        logging.info(f"Scheduled {prayer} at {t}")
+        schedule.every().day.at(t).do(play_adhan).tag("adhan")
+
+def schedule_next_fetch():
+    isha_str = prayers["Isha"]
+    schedule.every().day.at(isha_str).do(refresh_for_next_day).tag("refresh")
+
+def refresh_for_next_day():
+    global remaining_prayers
+
+    schedule.clear("adhan")
+    schedule.clear("refresh")
+
+    tmr_str = (date.today() + timedelta(days=1)).strftime("%d-%m-%Y")
+    execute_fetch(url, tmr_str, params)
+
+    remaining_prayers = get_remaining_prayers(prayers)
+    schedule_play_adhan(remaining_prayers)
+    schedule_next_fetch()
 
 
 # Audio functions
@@ -118,11 +122,12 @@ def screen_cleaning():
     time.sleep(3)
 
 def update_lcd():
-    global counter
-    global ORDER
     now = datetime.now().strftime("%H:%M")
-    counter %= len(ORDER)
-    lcd.write("Now: " + now, f"{ORDER[counter]} at {prayers[ORDER[counter]]}")
+    if remaining_prayers:
+        prayer, t = remaining_prayers[0]
+        lcd.write("Now: " + now, f"{prayer} at {t}")
+    else:
+        lcd.write("Now: " + now, "No prayers left")
 
 def graceful_exit(signum, frame):
     lcd.clear()
@@ -135,15 +140,20 @@ def graceful_exit(signum, frame):
 screen_cleaning()
 
 # 2. Get prayers
-fetch_prayer_times()
+initial_fetch() # sets the prayers list from F-I
 time.sleep(5)
 
-# 3. what time is it? which prayers are left?
-reconcile_counter()
+# 3. What time is it? which prayers are left?
+remaining_prayers = get_remaining_prayers(prayers)
 
+# 4. Schedule adhan
+schedule_play_adhan(remaining_prayers)
+
+# 5. Schedule fetching tomorrow's prayers
+schedule_next_fetch()
+  
 # 4. schedule lcd updates
 schedule.every(5).seconds.do(update_lcd)
-
 
 
 # Catch Ctrl+C & termination signal
