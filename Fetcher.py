@@ -72,6 +72,10 @@ def get_remaining_prayers(prayers):
         if prayer_time > now:
             remaining.append((name, prayers[name]))
 
+    if not remaining_prayers:
+        refresh_for_next_day()
+        remaining_prayers = get_remaining_prayers(prayers)
+
     return remaining
 
 def schedule_play_adhan(remaining_prayers):
