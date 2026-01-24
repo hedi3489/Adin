@@ -64,21 +64,20 @@ def fetch_prayer_times():
     global prayers_list
     schedule.clear('prayers')
 
-    # Determine which date to fetch (today or tomorrow if Isha passed)
     now = datetime.now()
-    if prayers_list:
-        isha_datetime = prayers_list[-1]["time"]
-        if now >= isha_datetime:
-            fetch_date = date.today() + timedelta(days=1)
-        else:
-            fetch_date = date.today()
+    # Step 1: fetch today's times temporarily
+    temp_list = execute_fetch(URL, now.strftime("%d-%m-%Y"), PARAMS)
+    
+    # Step 2: check if Isha already passed
+    if temp_list and now >= temp_list[-1]["time"]:
+        fetch_date = date.today() + timedelta(days=1)
     else:
         fetch_date = date.today()
-    date_str = fetch_date.strftime("%d-%m-%Y")
+    
+    # Step 3: fetch the final list
+    prayers_list = execute_fetch(URL, fetch_date.strftime("%d-%m-%Y"), PARAMS)
 
-    prayers_list = execute_fetch(URL, date_str, PARAMS)
-
-    # Schedule prayers
+    # Step 4: schedule all prayers
     for prayer in prayers_list:
         schedule.every().day.at(prayer["time"].strftime("%H:%M")).do(play_adhan).tag('prayers')
         logging.info(f"Scheduled {prayer['name']} at {prayer['time'].strftime('%H:%M')}")
@@ -131,13 +130,10 @@ def play_adhan():
 # =========================
 def update_lcd():
     now = datetime.now()
-    next_prayer = next(
-        (p for p in prayers_list if p["time"].time() > now.time()),
-        prayers_list[0] if prayers_list else None
-    )
-    if next_prayer:
-        lcd.write("Now: " + now.strftime("%H:%M"),
-                  f"{next_prayer['name']} at {next_prayer['time'].strftime('%H:%M')}")
+    future_prayers = [p for p in prayers_list if p["time"] > now]
+    next_prayer = future_prayers[0] if future_prayers else prayers_list[0]
+    lcd.write("Now: " + now.strftime("%H:%M"),
+              f"{next_prayer['name']} at {next_prayer['time'].strftime('%H:%M')}")
 
 # =========================
 # Shutdown / Cleanup
