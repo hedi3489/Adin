@@ -65,23 +65,26 @@ def fetch_prayer_times():
     schedule.clear('prayers')
 
     now = datetime.now()
-    # Step 1: fetch today's times temporarily
-    temp_list = execute_fetch(URL, now.strftime("%d-%m-%Y"), PARAMS)
-    
-    # Step 2: check if Isha already passed
+    fetch_date = date.today()  # default
+
+    # Step 1: Temporary fetch to check if Isha passed
+    temp_list = execute_fetch(URL, fetch_date.strftime("%d-%m-%Y"), PARAMS)
     if temp_list and now >= temp_list[-1]["time"]:
         fetch_date = date.today() + timedelta(days=1)
+        day_str = "Tomorrow's"
     else:
-        fetch_date = date.today()
-    
-    # Step 3: fetch the final list
-    prayers_list = execute_fetch(URL, fetch_date.strftime("%d-%m-%Y"), PARAMS)
+        day_str = "Today's"
 
-    # Step 4: schedule all prayers
+    logging.info("Initial fetch...")
+    prayers_list = execute_fetch(URL, fetch_date.strftime("%d-%m-%Y"), PARAMS)
+    logging.getLogger().success(f"{day_str} prayer times fetched successfully.")
+
+    # Step 2: Schedule prayers
     for prayer in prayers_list:
         schedule.every().day.at(prayer["time"].strftime("%H:%M")).do(play_adhan).tag('prayers')
         logging.info(f"Scheduled {prayer['name']} at {prayer['time'].strftime('%H:%M')}")
 
+    # Step 3: Schedule refresh safely
     schedule_refresh_time()
 
 def execute_fetch(url, date_str, params):
@@ -106,13 +109,22 @@ def execute_fetch(url, date_str, params):
 # Schedule Refresh
 # =========================
 def schedule_refresh_time():
+    # Clear old refresh jobs to prevent duplicates
+    schedule.clear('refresh')
+
     if not prayers_list:
         return
-    # Schedule refresh 5 minutes after Isha
+
     isha_time = prayers_list[-1]["time"]
-    refresh_time_dt = isha_time + timedelta(minutes=5)
-    refresh_time = refresh_time_dt.time()
-    schedule.every().day.at(refresh_time.strftime("%H:%M")).do(fetch_prayer_times).tag('refresh')
+    now = datetime.now()
+
+    if now >= isha_time:
+        # Isha has already passed → fetch tomorrow immediately
+        fetch_prayer_times()
+    else:
+        # Schedule refresh at Isha + 5 minutes
+        refresh_time_dt = isha_time + timedelta(minutes=5)
+        schedule.every().day.at(refresh_time_dt.strftime("%H:%M")).do(fetch_prayer_times).tag('refresh')
 
 # =========================
 # Prayer Actions
@@ -131,9 +143,10 @@ def play_adhan():
 def update_lcd():
     now = datetime.now()
     future_prayers = [p for p in prayers_list if p["time"] > now]
-    next_prayer = future_prayers[0] if future_prayers else prayers_list[0]
-    lcd.write("Now: " + now.strftime("%H:%M"),
-              f"{next_prayer['name']} at {next_prayer['time'].strftime('%H:%M')}")
+    next_prayer = future_prayers[0] if future_prayers else prayers_list[0] if prayers_list else None
+    if next_prayer:
+        lcd.write("Now: " + now.strftime("%H:%M"),
+                  f"{next_prayer['name']} at {next_prayer['time'].strftime('%H:%M')}")
 
 # =========================
 # Shutdown / Cleanup
