@@ -4,3 +4,4 @@ adin-env/
 adin.log
 trash/
 *.bak
+cleanup_lcd.py
