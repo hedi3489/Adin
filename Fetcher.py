@@ -47,14 +47,14 @@ def init_lcd():
     lcd_obj.clear()
     time.sleep(0.1)
     lcd_obj.clear()
-    lcd_obj.write("Adin Awake", "Fetching times")
-    time.sleep(3)
+    lcd_obj.write("Adin...", "    Waiting...")  # Initial waiting message
     return lcd_obj
 
 def log_startup():
     logging.info("")
     logging.info("==================================================")
     logging.info("===== Fetcher.py started =====")
+    logging.info(f"===== Start Time: {datetime.now().isoformat()} =====")
     logging.info("==================================================")
 
 # =========================
@@ -109,8 +109,7 @@ def execute_fetch(url, date_str, params):
 # Schedule Refresh
 # =========================
 def schedule_refresh_time():
-    # Clear old refresh jobs to prevent duplicates
-    schedule.clear('refresh')
+    schedule.clear('refresh')  # clear old refresh jobs
 
     if not prayers_list:
         return
@@ -118,12 +117,9 @@ def schedule_refresh_time():
     isha_time = prayers_list[-1]["time"]
     now = datetime.now()
 
-    if now >= isha_time:
-        # Isha has already passed → fetch tomorrow immediately
-        fetch_prayer_times()
-    else:
-        # Schedule refresh at Isha + 5 minutes
-        refresh_time_dt = isha_time + timedelta(minutes=5)
+    if now < isha_time:
+        # Schedule refresh at Isha + 3 minutes
+        refresh_time_dt = isha_time + timedelta(minutes=3)
         schedule.every().day.at(refresh_time_dt.strftime("%H:%M")).do(fetch_prayer_times).tag('refresh')
 
 # =========================
