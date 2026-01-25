@@ -9,7 +9,7 @@ import signal
 import sys
 
 # =========================
-# Globals / Configuration
+# Configuration
 # =========================
 prayers_list = []  # List of dicts: {"name": str, "time": datetime}
 lcd = None
@@ -54,7 +54,6 @@ def log_startup():
     logging.info("")
     logging.info("==================================================")
     logging.info("===== Fetcher.py started =====")
-    logging.info(f"===== Start Time: {datetime.now().isoformat()} =====")
     logging.info("==================================================")
 
 # =========================
@@ -67,7 +66,7 @@ def fetch_prayer_times():
     now = datetime.now()
     fetch_date = date.today()  # default
 
-    # Step 1: Temporary fetch to check if Isha passed
+    # Temporary fetch to check if Isha passed
     temp_list = execute_fetch(URL, fetch_date.strftime("%d-%m-%Y"), PARAMS)
     if temp_list and now >= temp_list[-1]["time"]:
         fetch_date = date.today() + timedelta(days=1)
@@ -79,12 +78,12 @@ def fetch_prayer_times():
     prayers_list = execute_fetch(URL, fetch_date.strftime("%d-%m-%Y"), PARAMS)
     logging.getLogger().success(f"{day_str} prayer times fetched successfully.")
 
-    # Step 2: Schedule prayers
+    # Schedule prayers
     for prayer in prayers_list:
         schedule.every().day.at(prayer["time"].strftime("%H:%M")).do(play_adhan).tag('prayers')
         logging.info(f"Scheduled {prayer['name']} at {prayer['time'].strftime('%H:%M')}")
 
-    # Step 3: Schedule refresh safely
+    # Schedule refresh safely
     schedule_refresh_time()
 
 def execute_fetch(url, date_str, params):
@@ -92,7 +91,7 @@ def execute_fetch(url, date_str, params):
         response = requests.get(url + date_str, params=params, timeout=10)
         response.raise_for_status()
         timings = response.json()["data"]["timings"]
-        logging.getLogger().success("Prayer times fetched successfully.")
+        # Removed duplicate SUCCESS log here
     except Exception as e:
         logging.error(f"Error fetching prayer times: {e}")
         timings = {}
@@ -145,7 +144,7 @@ def update_lcd():
                   f"{next_prayer['name']} at {next_prayer['time'].strftime('%H:%M')}")
 
 # =========================
-# Shutdown / Cleanup
+# Cleanup
 # =========================
 def graceful_exit(signum, frame):
     lcd.clear()
