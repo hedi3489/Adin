@@ -9,7 +9,7 @@ import signal
 import sys
 
 # =========================
-# Configuration
+# Configuration / State
 # =========================
 prayers_list = []  # [{"name": str, "time": datetime}]
 lcd = None
@@ -54,7 +54,7 @@ def init_lcd():
     lcd_obj.clear()
     time.sleep(0.1)
     lcd_obj.clear()
-    lcd_obj.write("Adin...", "    Awake...")
+    lcd_obj.write("Adin...", "    Waiting...")
     return lcd_obj
 
 # =========================
@@ -82,6 +82,17 @@ def execute_fetch(url, date_str, params):
 
     return prayers
 
+def prune_past_prayers():
+    global prayers_list
+    now = datetime.now()
+    before = len(prayers_list)
+
+    prayers_list = [p for p in prayers_list if p["time"] > now]
+
+    pruned = before - len(prayers_list)
+    if pruned > 0:
+        logging.info(f"Pruned {pruned} past prayer(s)")
+
 def fetch_prayer_times():
     global prayers_list
 
@@ -90,7 +101,7 @@ def fetch_prayer_times():
     now = datetime.now()
     fetch_date = date.today()
 
-    # Temporary fetch to determine today vs tomorrow
+    # Temporary fetch to decide today vs tomorrow
     temp_list = execute_fetch(URL, fetch_date.strftime("%d-%m-%Y"), PARAMS)
 
     if temp_list and now >= temp_list[-1]["time"]:
@@ -101,6 +112,9 @@ def fetch_prayer_times():
 
     logging.info("Initial fetch...")
     prayers_list = execute_fetch(URL, fetch_date.strftime("%d-%m-%Y"), PARAMS)
+
+    prune_past_prayers()
+
     logging.getLogger().success(f"{day_str} prayer times fetched successfully.")
 
     for prayer in prayers_list:
@@ -148,7 +162,6 @@ def play_adhan(prayer_name):
     except Exception as e:
         logging.error(f"Error playing audio: {e}")
 
-    # Remove fired prayer
     prayers_list = [
         p for p in prayers_list if p["name"] != prayer_name
     ]
